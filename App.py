@@ -4,10 +4,10 @@ import pandas as pd
 import numpy as np
 from PIL import ImageTk, Image, ImageDraw, ImageFont
 from Grouper import Grouper
-from ColorSelector import ColorSelector
+from ColorSelector import ColorSelector, rand_color
 import json
 from DateSelcector import DateSelector
-from datetime import datetime
+
 
 class Application(tk.Frame):
     def __init__(self, master=None):
@@ -15,7 +15,9 @@ class Application(tk.Frame):
         self.master = master
         self.pack()
         self._stage_number = 0
-        self.create_widgets()
+        self._previous_button = None
+        self._next_button = None
+        self._stage = [[], [], [], []]
         self._data = None
         self._result_arr = None
         self._activities = None
@@ -23,10 +25,9 @@ class Application(tk.Frame):
         self._date_to = None
         self._translator = dict()
         self._activity_color = dict()
+        self._create_widgets()
 
-    def create_widgets(self):
-        self._stage = [[], [], []]
-
+    def _create_widgets(self):
         load_button = tk.Button(self, text="load", command=self.load_data)
         self._stage[0].append(load_button)
 
@@ -58,20 +59,24 @@ class Application(tk.Frame):
                                          command=self._load_colors)
         self._stage[2].append(load_coloring_button)
 
-        show_button = tk.Button(self, text="show",
-                                command=self._show)
-        self._stage[2].append(show_button)
+        save_result_button = tk.Button(self, text="save result (with legend)",
+                                command=lambda: self._save_result(True))
+        self._stage[3].append(save_result_button)
+
+        save_result_button_no_legend = tk.Button(self, text="save result (without legend)",
+                                command=lambda: self._save_result(False))
+        self._stage[3].append(save_result_button_no_legend)
 
         for b in self._stage[0]:
             b.pack()
 
         frame = tk.Frame(self)
 
-        previous_button = tk.Button(frame, text="Previous", command=self._prev_stage)
-        previous_button.pack(side="left")
+        self._previous_button = tk.Button(frame, text="Previous", command=self._prev_stage)
+        self._previous_button.pack(side="left")
 
-        next_button = tk.Button(frame, text="Next", command=self._next_stage)
-        next_button.pack(side="right")
+        self._next_button = tk.Button(frame, text="Next", command=self._next_stage)
+        self._next_button.pack(side="right")
 
         quit_button = tk.Button(self, text="QUIT", fg="red", command=self.master.destroy)
         quit_button.pack(side="bottom")
@@ -97,6 +102,7 @@ class Application(tk.Frame):
     def load_data(self):
         filename = filedialog.askopenfilename(initialdir=".", title="Select file",
                                      filetypes=(("csv files", "*.csv"), ("all files", "*.*")))
+        if not filename: return
         data = pd.read_csv(filename, usecols=[0, 2, 3])
         data.dropna(axis=0, inplace=True)
         data["From"] = pd.to_datetime(data["From"])
@@ -106,7 +112,7 @@ class Application(tk.Frame):
         data = data.iloc[::-1]  # reversing so last logs will be at the end
         self._date_from = pd.Timestamp(min(data["From"]).date())
         self._date_to = pd.Timestamp(max(data["To"]).date())
-        self._data = self._prepare(data)
+        self._data = data # self._prepare(data)
         self._activities = pd.unique(self._data["Type"])
 
     def _create_color_selector(self): #TODO autimatic color picking at stage 2
@@ -120,10 +126,8 @@ class Application(tk.Frame):
 
     def _prepare(self, data):
         bad_idx = data.iloc[1:]["From"].values < data.iloc[:-1]["To"].values  # overlapping entries
-        first = True
-        while first or pd.unique(bad_idx).shape != (1,):
-            first = False
-            data.iloc[1:].loc[bad_idx, "From"] = data.iloc[bad_idx]["To"].values
+        while pd.unique(bad_idx).shape != (1,):
+            data.loc[bad_idx, "From"] = data.iloc[bad_idx]["To"].values
             data = data[data["From"] < data["To"]]
             bad_idx = data.iloc[1:]["From"].values < data.iloc[:-1]["To"].values
         return data
@@ -156,43 +160,58 @@ class Application(tk.Frame):
                     result[day_idx, from_idx:to_idx, :] = activity_color[activity]
 
         times = int((0.8 * result.shape[1]) // (result.shape[0]))
-        print(times, result.shape)
         if times < 1:
             times = 1
-        self._result_arr = self._lenghten(result, times)
+        self._result_arr = self._lengthen(result, times)
 
     def _show(self): #TODO result should be scrollable
+       # self._change_stage(1)
+        if not self._activity_color:
+            for activity in self._activities:
+                self._activity_color[activity] = rand_color()
         idx1 = self._data["From"] >= self._date_from
         idx2 = self._data["To"] <= self._date_to
         self._data = self._data[np.logical_and(idx1, idx2)]
         self._activities = pd.unique(self._data["Type"])
         self._draw()
         if self._result_arr is not None:
-          #  matImage.imsave("./dio.png", self._result_arr/256)
-            img = Image.fromarray(self._result_arr, "RGB")
-            img = self._add_legend(img)
-            img.save("i like trains.jpg")
-            self.photo = ImageTk.PhotoImage(image=img)
+            self._img_no_legend = Image.fromarray(self._result_arr, "RGB")
+            self._img_legend = self._img_no_legend.copy()
+            self._img_legend = self._add_legend(self._img_legend)
+           # img.save("i like trains.jpg")
+            self.photo = ImageTk.PhotoImage(image=self._img_legend)
             w = self._result_arr.shape[1]
             h = self._result_arr.shape[0]
-            canvas = tk.Canvas(self, width=w, height=h)
-            canvas.pack()
+            frame = tk.Frame(self)
+            frame.pack(side=tk.TOP)
+            canvas = tk.Canvas(frame, width=w//2, height=h//2)
+            hbar = tk.Scrollbar(self, orient=tk.HORIZONTAL)
+            hbar.pack(fill=tk.X)
+            hbar.config(command=canvas.xview)
+            canvas.pack(side=tk.LEFT)
             canvas.create_image(0, 0, image=self.photo, anchor="nw")
+            vbar = tk.Scrollbar(frame, orient=tk.VERTICAL)
+            vbar.pack(side=tk.RIGHT, fill=tk.Y)
+            vbar.config(command=canvas.yview)
+
+            canvas.configure(yscrollcommand=vbar.set, xscrollcommand=hbar.set)
+            canvas.configure(scrollregion=canvas.bbox("all"))
 
     def _add_legend(self, image):
         activity_color = self._activity_color
         draw = ImageDraw.Draw(image)
         for i, (activity, color) in enumerate(activity_color.items()):
             fnt = ImageFont.truetype("arial.ttf", size=10)
-            w0 = 24*60
+            w0 = 24 * 60
             yh = 15
-            draw.text((w0+30, i*yh), activity, fint=fnt)
-            rec_pos = ((w0+10, i*15), ((w0+20, i*15 + 10)))
-            color = tuple(int(c) for c in color )
+            draw.text((w0 + 30, i * yh), activity, fint=fnt)
+            rec_pos = ((w0 + 10, i * 15), ((w0 + 20, i * 15 + 10)))
+            color = tuple(int(c) for c in color)
             draw.rectangle(rec_pos, fill=color)
         return image
 
-    def _lenghten(self, array, times: int):
+    @staticmethod
+    def _lengthen(self, array, times: int):
         assert type(times) is int
         shape = array.shape
         shape = (shape[0] * times,) + shape[1:]
@@ -203,23 +222,33 @@ class Application(tk.Frame):
         return resized
 
     def _load_colors(self):
-        with open('coloring.json', 'r') as f:
+        filename = filedialog.askopenfilename(initialdir=".", title="Select file",
+                                              filetypes=(("json files", "*.json"), ("all files", "*.*")))
+        if not filename: return
+        with open(filename, 'r') as f:
             jcolors = f.read()
         self._activity_color = json.loads(jcolors)
 
     def _save_colors(self):
+        filename = filedialog.asksaveasfilename(initialdir=".", title="Select file to save to",
+                                              filetypes=(("json files", "*.json"), ("all files", "*.*")), defaultextension=".json")
         jcolors = json.dumps(self._activity_color)
-        with open("coloring.json", "w") as f:
+        with open(filename, "w") as f:
             f.write(jcolors)
 
     def _load_grouping(self):
-        with open('grouping.json', 'r') as f:
+        filename = filedialog.askopenfilename(initialdir=".", title="Select file",
+                                              filetypes=(("json files", "*.json"), ("all files", "*.*")))
+        if not filename: return
+        with open(filename, 'r') as f:
             jtrans = f.read()
         self._translator = json.loads(jtrans)
 
     def _save_grouping(self):
+        filename = filedialog.asksaveasfilename(initialdir=".", title="Select file to save to",
+                                              filetypes=(("json files", "*.json"), ("all files", "*.*")), defaultextension=".json")
         jtrans = json.dumps(self._translator)
-        with open("grouping.json", "w") as f:
+        with open(filename, "w") as f:
             f.write(jtrans)
 
     def _group(self):
@@ -234,12 +263,18 @@ class Application(tk.Frame):
         Grouper(self._activities , result, omit_master=sub_activities, omit_sub=master_activities)
 
     def _change_stage(self, diff):
+        if self._stage_number == 0 and self._data is None:
+            return
         if 0 <= self._stage_number + diff < len(self._stage):
             for w in self._stage[self._stage_number]:
                 w.pack_forget()
             self._stage_number = self._stage_number + diff
             for w in self._stage[self._stage_number]:
                 w.pack()
+        if self._stage_number == len(self._stage) - 1:
+            self._next_button.pack_forget()
+            self._previous_button.pack_forget()
+            self._show()
 
     def _next_stage(self):
         self._change_stage(1)
@@ -247,7 +282,16 @@ class Application(tk.Frame):
     def _prev_stage(self):
         self._change_stage(-1)
 
-    #TODO add last stage with result and saving
+    def _save_result(self, use_legend):
+        if use_legend:
+            img = self._img_legend
+        else:
+            width, height = self._img_no_legend.size
+            img = self._img_no_legend.crop((0,0,24*60,height))
+        filename = filedialog.asksaveasfilename(initialdir=".", title="Select file to save to", defaultextension=".png",
+                                                filetypes=(("jpg files", "*.jpg"), ("png files", "*.png"), ("all files", "*.*")))
+        img.save(filename)
+
 
 
 if __name__=="__main__":
