@@ -3,9 +3,10 @@ from tkinter import filedialog
 import pandas as pd
 import numpy as np
 from PIL import ImageTk, Image, ImageDraw, ImageFont
+import json
+
 from Grouper import Grouper
 from ColorSelector import ColorSelector, rand_color
-import json
 from DateSelcector import DateSelector
 
 
@@ -115,7 +116,7 @@ class Application(tk.Frame):
         self._data = data # self._prepare(data)
         self._activities = pd.unique(self._data["Type"])
 
-    def _create_color_selector(self): #TODO autimatic color picking at stage 2
+    def _create_color_selector(self):
         result = tk.StringVar()
         def callback(*args):
             self._activity_color = json.loads(result.get())
@@ -164,7 +165,7 @@ class Application(tk.Frame):
             times = 1
         self._result_arr = self._lengthen(result, times)
 
-    def _show(self): #TODO result should be scrollable
+    def _show(self):
        # self._change_stage(1)
         if not self._activity_color:
             for activity in self._activities:
@@ -211,7 +212,7 @@ class Application(tk.Frame):
         return image
 
     @staticmethod
-    def _lengthen(self, array, times: int):
+    def _lengthen(array, times: int):
         assert type(times) is int
         shape = array.shape
         shape = (shape[0] * times,) + shape[1:]

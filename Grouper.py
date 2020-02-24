@@ -19,7 +19,6 @@ class Grouper():
         def f():
             self.master_activity = name
             self.button_holder.destroy()
-            print(name)
             self.second_stage()
         return f
 
@@ -32,7 +31,6 @@ class Grouper():
                     self.slaves.remove(name)
                 else:
                     self.slaves.append(name)
-                print(self.slaves)
             return f
 
         for activity in self.activities:
