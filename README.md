@@ -18,3 +18,5 @@ Color assigned to each activity is random, but it's also possible to choose colo
 
 # Saving the result
 Resulting visualisation can be saved (with or without legend).
+
+# A standalone version is available [here] (no Python required)(https://github.com/remilvus/TimeVisualiserStandalone)
